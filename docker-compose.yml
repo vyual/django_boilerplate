@@ -1,0 +1,76 @@
+version: '3.8'
+
+services:
+  db:
+    image: postgres:14.5
+    restart: always
+    volumes:
+      - ./data/db:/var/lib/postgresql/data
+    env_file:
+      - .env
+  cache:
+    image: redis:7.0.4
+    restart: always
+    volumes:
+      - ./data/cache:/data
+
+  web:
+    build: .
+    command:
+      [
+        "./wait-for-it.sh",
+        "db:5432",
+        "--strict",
+        "--timeout=30",
+        "--",
+        "gunicorn",
+        "--workers=3",
+        "--bind=unix:/code/gunicorn.sock",
+        "django_boilerplate.wsgi:application"
+      ]
+    restart: always
+    volumes:
+      - .:/code
+    env_file:
+      - .env
+    depends_on:
+      - db
+
+  celery:
+    build: .
+    command: celery -A celery_config worker --loglevel=info --beat
+    restart: always
+    volumes:
+      - .:/code
+    env_file:
+      - .env
+    depends_on:
+      - db
+      - cache
+
+  celerybeat:
+    build: .
+    command: celery -A celery_config beat -l info --scheduler django_celery_beat.schedulers:DatabaseScheduler
+    restart: always
+    volumes:
+      - .:/code
+      - ./data/celerybeat:/var/lib/celerybeat # Папка для хранения файлов состояния планировщика
+    env_file:
+      - .env
+    depends_on:
+      - db
+      - cache
+
+  nginx:
+    image: nginx:1.23.1
+    restart: always
+    volumes:
+      - ./config/nginx:/etc/nginx/templates
+      - ./static:/code/static
+      - ./media:/code/media
+      - .:/code
+    ports:
+      - "80:80"
+      - "443:443"
+    depends_on:
+      - web

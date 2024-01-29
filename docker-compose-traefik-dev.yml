@@ -1,0 +1,85 @@
+version: '3.8'
+
+services:
+  db:
+    image: postgres:14.5
+    restart: always
+    volumes:
+      - ./data/db:/var/lib/postgresql/data
+    env_file:
+      - .env
+    networks:
+      - internal
+
+  cache:
+    image: redis:7.0.4
+    restart: always
+    volumes:
+      - ./data/cache:/data
+
+  web:
+    build: .
+    command:
+      [
+        "./wait-for-it.sh",
+        "db:5432",
+        "--strict",
+        "--timeout=30",
+        "--",
+        "gunicorn",
+        "--workers=3",
+        "--bind=0.0.0.0:8000",
+        "django_boilerplate.wsgi:application"
+      ]
+    restart: always
+    volumes:
+      - .:/code
+    env_file:
+      - .env
+
+    networks:
+      - traefik
+      - internal
+    labels:
+      - "traefik.enable=true"
+
+      - "traefik.docker.network=traefik"
+      - "traefik.http.services.dev-ms-zadarma.loadbalancer.server.port=8000"
+      - "traefik.http.routers.dev-ms-zadarma.rule=Host(`django.example.com`)"
+      - "traefik.http.routers.dev-ms-zadarma.entrypoints=http"
+      - "traefik.http.routers.dev-ms-zadarma-secure.rule=Host(`django.example.com`)"
+      - "traefik.http.routers.dev-ms-zadarma-secure.entrypoints=https"
+      - "traefik.http.routers.dev-ms-zadarma-secure.tls.certresolver=traefik-resolver"
+    depends_on:
+      - db
+
+  celery:
+    build: .
+    command: celery -A celery_config worker --loglevel=info --pool=solo
+    restart: always
+    volumes:
+      - .:/code
+    env_file:
+      - .env
+    depends_on:
+      - db
+      - cache
+
+  celerybeat:
+    build: .
+    command: celery -A celery_config beat --loglevel=debug
+    restart: always
+    volumes:
+      - .:/code
+      - ./data/celerybeat:/var/lib/celerybeat
+    env_file:
+      - .env
+    depends_on:
+      - db
+      - cache
+
+networks:
+  traefik:
+    external: true
+  internal:
+    driver: bridge

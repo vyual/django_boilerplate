@@ -1,0 +1,65 @@
+version: '3.8'
+
+services:
+  db:
+    image: postgres:14.5
+    restart: always
+    volumes:
+      - ./data/db:/var/lib/postgresql/data
+    environment:
+      - POSTGRES_DB=django_boilerplate
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=1jf12jdm1029hcfn1012w
+
+  cache:
+    image: redis:7.0.4
+    restart: always
+    volumes:
+      - ./data/cache:/data
+
+  web:
+    build: .
+    command: python manage.py runserver 0.0.0.0:8000
+    restart: always
+    volumes:
+      - .:/code
+    environment:
+      - DJANGO_SETTINGS_MODULE=django_boilerplate.settings.local
+      - POSTGRES_DB=django_boilerplate
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=1jf12jdm1029hcfn1012w
+    depends_on:
+      - db
+    ports:
+      - "8000:8000"
+
+  celery:
+    build: .
+    command: celery -A celery_config worker --loglevel=info --pool=solo
+    restart: always
+    volumes:
+      - .:/code
+    environment:
+      - DJANGO_SETTINGS_MODULE=django_boilerplate.settings.local
+      - POSTGRES_DB=django_boilerplate
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=1jf12jdm1029hcfn1012w
+    depends_on:
+      - db
+      - cache
+
+  celerybeat:
+    build: .
+    command: celery -A celery_config beat --loglevel=debug
+    restart: always
+    volumes:
+      - .:/code
+      - ./data/celerybeat:/var/lib/celerybeat # Папка для хранения файлов состояния планировщика
+    environment:
+      - DJANGO_SETTINGS_MODULE=django_boilerplate.settings.local
+      - POSTGRES_DB=django_boilerplate
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=1jf12jdm1029hcfn1012w
+    depends_on:
+      - db
+      - cache
